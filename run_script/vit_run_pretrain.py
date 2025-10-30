@@ -11,7 +11,7 @@ dataset = 'cub200'
 lr_base = 2e-4
 lr_new = 2e-4
 
-epochs_bases = [1] #5
+epochs_bases = [5] #5
 epochs_new = 3 #3
 milestones_list = ['20 30 45']
 

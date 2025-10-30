@@ -119,17 +119,13 @@ class CIFAR10(VisionDataset):
 
         self.targets = np.asarray(self.targets)
 
-        # Corrected code
-        # Only perform index-based selection if an index is provided.
-        # Otherwise, load the full dataset as expected by CrossDomainDataLoader.
-        if index is not None:
-            if base_sess:
+        if base_sess:
+            self.data, self.targets = self.SelectfromDefault(self.data, self.targets, index)
+        else:  # new Class session
+            if train:
+                self.data, self.targets = self.NewClassSelector(self.data, self.targets, index)
+            else:
                 self.data, self.targets = self.SelectfromDefault(self.data, self.targets, index)
-            else:  # new Class session
-                if train:
-                    self.data, self.targets = self.NewClassSelector(self.data, self.targets, index)
-                else:
-                    self.data, self.targets = self.SelectfromDefault(self.data, self.targets, index)
 
         self._load_meta()
 

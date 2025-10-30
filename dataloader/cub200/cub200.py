@@ -11,7 +11,7 @@ from torchvision import transforms
 class CUB200(Dataset):
 
     def __init__(self, root='./', train=True,
-                 index_path=None, index=None, base_sess=None, is_clip=False, global_offset=0): # 接收一个用于全局偏移的新参数
+                 index_path=None, index=None, base_sess=None, is_clip=False):
         self.root = os.path.expanduser(root)
         self.train = train  # training set or test set\
         self.labels = []
@@ -37,15 +37,6 @@ class CUB200(Dataset):
                 self.data, self.targets = self.SelectfromClasses(self.data, self.targets, index)
             else:
                 self.data, self.targets = self.SelectfromTxt(self.data2label, index_path)
-
-                # --- !!! 关键修改：将全局标签重新映射为本地标签 (0, 1, 2, ...) !!! ---
-                # 获取当前会话中的所有唯一全局标签
-                unique_targets = sorted(list(set(self.targets)))
-                # 创建映射字典：全局标签 -> 本地标签 (0, 1, 2, ...)
-                target_mapping = {original_label: new_label for new_label, original_label in enumerate(unique_targets)}
-                # 应用映射
-                self.targets = [target_mapping[t] for t in self.targets]
-                # -----------------------------------------------------------------------
         else:
             if is_clip:
                 self.transform = transforms.Compose([
@@ -62,12 +53,6 @@ class CUB200(Dataset):
                     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
                 ])
             self.data, self.targets = self.SelectfromClasses(self.data, self.targets, index)
-            # --- !!! 关键修改：将标签平移到正确的全局偏移位置 !!! ---
-            # 对于测试集，这通常是正确的全局标签。对于训练集，如果采用 local remapping，也需要平移。
-            # 由于您的训练逻辑 (使用 full 110 head) 需要全局标签，我们在这里进行偏移。
-            self.targets = np.array(self.targets) + global_offset
-            self.targets = self.targets.tolist()
-            # --------------------------------------------------------
 
     def text_read(self, file):
         with open(file, 'r') as f:
