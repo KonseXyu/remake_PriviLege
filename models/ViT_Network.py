@@ -15,12 +15,16 @@ class ViT_MYNET(nn.Module):
         self.mode = mode
         self.args = args
         
-        if self.args.dataset in ['cifar100']:
-            self.num_features = 768
-        if self.args.dataset in ['mini_imagenet']:
-            self.num_features = 768
-        if self.args.dataset == 'cub200' or self.args.dataset == 'air':
-            self.num_features = 768
+        dataset_feature_map = {
+            'cifar100': 768,
+            'mini_imagenet': 768,
+            'cub200': 768,
+            'air': 768,
+        }
+        try:
+            self.num_features = dataset_feature_map[self.args.dataset]
+        except KeyError as exc:
+            raise ValueError(f"Unsupported dataset: {self.args.dataset}") from exc
 
         if args.scratch:
             self.encoder = timm.create_model("vit_base_patch16_224",pretrained=False,num_classes=args.num_classes,

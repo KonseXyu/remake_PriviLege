@@ -14,6 +14,12 @@ def get_command_line_parser():
     parser.add_argument('-project', type=str, default=PROJECT)
     parser.add_argument('-dataset', type=str, default='cub200',
                         choices=['mini_imagenet', 'cub200', 'cifar100'])
+    parser.add_argument('-base_dataset', type=str, default=None,
+                        choices=['mini_imagenet', 'cub200', 'cifar100'],
+                        help='Optional override for the dataset used during the base session')
+    parser.add_argument('-incremental_dataset', type=str, default=None,
+                        choices=['mini_imagenet', 'cub200', 'cifar100'],
+                        help='Dataset used for incremental sessions. Defaults to the base dataset when not provided.')
     parser.add_argument('-dataroot', type=str, default=DATA_DIR)
     parser.add_argument('-out', type=str, default=None)
 
