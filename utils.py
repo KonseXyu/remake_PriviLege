@@ -1,17 +1,16 @@
-import random
-import torch
 import os
-import time
-
-import numpy as np
-import pprint as pprint
-
-from torch.utils.data import DataLoader, Sampler
 import random
-from tqdm import tqdm
-from models import *
+import time
 from collections import OrderedDict, defaultdict
 from copy import deepcopy
+
+import numpy as np
+import torch
+import pprint as pprint
+from torch.utils.data import DataLoader, Sampler
+from tqdm import tqdm
+
+from models import *
 
 
 _utils_pp = pprint.PrettyPrinter()
@@ -51,40 +50,39 @@ def ensure_path(path):
         os.makedirs(path)
 
 
-class Averager():
+class _RunningAverage:
 
-    def __init__(self):
-        self.v = 0
-        self.acc_v = 0
+    def __init__(self, weight_by_count=False):
+        self.weight_by_count = weight_by_count
+        self.reset()
+
+    def reset(self):
+        self.acc_v = 0.0
         self.n = 0
+        self.v = 0.0
 
     def add(self, x, current_n=1):
-        # self.acc_v += x * current_n
-        self.acc_v += x
+        if self.weight_by_count:
+            self.acc_v += x * current_n
+        else:
+            self.acc_v += x
         self.n += current_n
-        self.v = self.acc_v / self.n
-
-    def item(self):
-        try:
-            return self.acc_v / self.n
-        except ZeroDivisionError:
-            return 0.
-
-class Averager_Loss():
-
-    def __init__(self):
-        self.v = 0
-        self.acc_v = 0
-        self.n = 0
-
-    def add(self, x, current_n=1):
-        self.acc_v += x * current_n
-        # self.acc_v += x
-        self.n += current_n
-        self.v = self.acc_v / self.n
+        self.v = self.acc_v / self.n if self.n else 0.0
 
     def item(self):
         return self.v
+
+
+class Averager(_RunningAverage):
+
+    def __init__(self):
+        super().__init__(weight_by_count=False)
+
+
+class Averager_Loss(_RunningAverage):
+
+    def __init__(self):
+        super().__init__(weight_by_count=True)
 
 
 
@@ -105,10 +103,7 @@ class Timer():
 
 def count_acc(logits, label):
     pred = torch.argmax(logits, dim=1)
-    if torch.cuda.is_available():
-        return (pred == label).sum().item()
-    else: # only for gpu setup
-        pass
+    return (pred == label).sum().item()
 
 
 def save_list_to_txt(name, input_list):
