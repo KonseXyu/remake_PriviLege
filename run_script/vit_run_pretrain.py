@@ -39,7 +39,7 @@ for seed in seeds:
                 '-gpu {} '
                 '-temperature 2 '
                 '-start_session 0 '
-                '-batch_size_base 32 '
+                '-batch_size_base 128 '
                 '-seed {} '
                 '-vit '
                 '-comp_out 1 '
@@ -50,10 +50,10 @@ for seed in seeds:
                   
                 '-cross_dataset '
                 '-base_dataset cub200 '
-                '-inc_dataset mini_imagenet '
+                '-inc_dataset cub200 '
                 # '-base_dataroot dataroot '
                 # '-inc_dataroot dataroot '
-                '-inc_way 5 '
+                '-inc_way 10 '
                 '-inc_sessions 3 '
                   
                 '-out {} '

@@ -70,7 +70,7 @@ def build_label_embedding(train_set, session, Bert_model, tokenizer, word_info, 
 
         print("Number of classes:", len(texts))
         print("classes_int:", np.array(cur_ids))
-        print(f'new classes for session {session} : {texts} \\n')
+        print(f'new classes for session {session} : {texts} \n')
         return
 
     # fallback to the original (kept for single-dataset path)
@@ -314,11 +314,11 @@ class ViT_FSCILTrainer(Trainer):
                         'epoch:%03d,lr:%.4f,training_loss:%.5f,training_acc:%.5f,test_loss:%.5f,test_acc:%.5f' % (
                             epoch, lrc, tl, ta, tsl, tsa))
                     print('This epoch takes %d seconds' % (time.time() - start_time),
-                            '\\nstill need around %.2f mins to finish this session' % (
+                            '\nstill need around %.2f mins to finish this session' % (
                                     (time.time() - start_time) * (args.epochs_base - epoch) / 60))
                     scheduler.step()
 
-                result_list.append('Session {}, Test Best Epoch {},\\nbest test Acc {:.4f}\\n'.format(
+                result_list.append('Session {}, Test Best Epoch {},\nbest test Acc {:.4f}\n'.format(
                     session, self.trlog['max_acc_epoch'], self.trlog['max_acc'][session], ))
                 save_model_dir = os.path.join(args.save_path, 'session' + str(session) + '_last_epoch.pth')
                 torch.save(dict(params=self.model.state_dict()), save_model_dir)
@@ -381,9 +381,9 @@ class ViT_FSCILTrainer(Trainer):
                 print('Saving model to :%s' % save_model_dir)
                 print('  test acc={:.3f}'.format(self.trlog['max_acc'][session]))
 
-                result_list.append('Session {}, test Acc {:.3f}\\n'.format(session, self.trlog['max_acc'][session]))
+                result_list.append('Session {}, test Acc {:.3f}\n'.format(session, self.trlog['max_acc'][session]))
 
-        result_list.append('Base Session Best Epoch {}\\n'.format(self.trlog['max_acc_epoch']))
+        result_list.append('Base Session Best Epoch {}\n'.format(self.trlog['max_acc_epoch']))
         result_list.append(self.trlog['max_acc'])
         print(self.trlog['max_acc'])
         save_list_to_txt(os.path.join(args.save_path, 'results.txt'), result_list)
