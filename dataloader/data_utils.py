@@ -97,18 +97,18 @@ def _build_raw(dataset_name, root, train, args):
         n = _defaults_for('cub200')['num_classes']
         full_index = np.arange(n)
         if train:
-            return CUB200(root=root, train=True, index=full_index, base_sess=True, is_clip=getattr(args, 'clip', False))
+            return CUB200(root=root, train=True, index=full_index, base_sess=True)
         else:
-            return CUB200(root=root, train=False, index=full_index, is_clip=getattr(args, 'clip', False))
+            return CUB200(root=root, train=False, index=full_index)
 
     elif dataset_name == 'mini_imagenet':
         from dataloader.miniimagenet.miniimagenet import MiniImageNet
         n = _defaults_for('mini_imagenet')['num_classes']
         full_index = np.arange(n)
         if train:
-            return MiniImageNet(root=root, train=True, index=full_index, base_sess=True, is_clip=getattr(args, 'clip', False))
+            return MiniImageNet(root=root, train=True, index=full_index, base_sess=True)
         else:
-            return MiniImageNet(root=root, train=False, index=full_index, is_clip=getattr(args, 'clip', False))
+            return MiniImageNet(root=root, train=False, index=full_index)
 
     elif dataset_name == 'cifar100':
         from dataloader.cifar100.cifar import CIFAR100
@@ -116,10 +116,10 @@ def _build_raw(dataset_name, root, train, args):
         full_index = np.arange(n)
         if train:
             return CIFAR100(root=root, train=True, download=False, index=full_index, base_sess=True,
-                            is_vit=getattr(args, 'vit', False), is_clip=getattr(args, 'clip', False))
+                            is_vit=getattr(args, 'vit', False))
         else:
             return CIFAR100(root=root, train=False, download=False, index=full_index, base_sess=True,
-                            is_vit=getattr(args, 'vit', False), is_clip=getattr(args, 'clip', False))
+                            is_vit=getattr(args, 'vit', False))
     else:
         raise KeyError(dataset_name)
 
@@ -321,14 +321,12 @@ def get_base_dataloader(args, clip_trsf=None):
                                             index=class_index, base_sess=True,is_vit=args.vit, is_clip=args.clip)
 
     if args.dataset == 'cub200':
-        trainset = args.Dataset.CUB200(root=args.dataroot, train=True,
-                                       index=class_index, base_sess=True, is_clip=args.clip)
-        testset = args.Dataset.CUB200(root=args.dataroot, train=False, index=class_index, is_clip=args.clip)
+        trainset = args.Dataset.CUB200(root=args.dataroot, train=True, index=class_index, base_sess=True)
+        testset = args.Dataset.CUB200(root=args.dataroot, train=False, index=class_index)
 
     if args.dataset == 'mini_imagenet':
-        trainset = args.Dataset.MiniImageNet(root=args.dataroot, train=True,
-                                             index=class_index, base_sess=True, is_clip=args.clip)
-        testset = args.Dataset.MiniImageNet(root=args.dataroot, train=False, index=class_index, is_clip=args.clip)
+        trainset = args.Dataset.MiniImageNet(root=args.dataroot, train=True, index=class_index, base_sess=True)
+        testset = args.Dataset.MiniImageNet(root=args.dataroot, train=False, index=class_index)
 
     trainloader = torch.utils.data.DataLoader(dataset=trainset, batch_size=args.batch_size_base, shuffle=True,
                                               num_workers=4)
@@ -344,7 +342,7 @@ def get_standard_data_loader(args):
 
 
 def get_base_dataloader_meta(args):
-    txt_path = "D:/Code/pythonCode/PriViLege/data/index_list/" + args.dataset + "/session_" + str(0 + 1) + '.txt'
+    txt_path = "/root/autodl-tmp/remake_PriviLege/data/index_list/" + args.dataset + "/session_" + str(0 + 1) + '.txt'
     class_index = np.arange(args.base_class)
     if args.dataset == 'cifar100':
         trainset = args.Dataset.CIFAR100(root=args.dataroot, train=True, download=True,
@@ -353,15 +351,11 @@ def get_base_dataloader_meta(args):
                                         index=class_index, base_sess=True,is_vit=args.vit, is_clip=args.clip)
 
     if args.dataset == 'cub200':
-        trainset = args.Dataset.CUB200(root=args.dataroot, train=True,
-                                       index_path=txt_path, is_clip=args.clip)
-        testset = args.Dataset.CUB200(root=args.dataroot, train=False,
-                                      index=class_index, is_clip=args.clip)
+        trainset = args.Dataset.CUB200(root=args.dataroot, train=True, index_path=txt_path)
+        testset = args.Dataset.CUB200(root=args.dataroot, train=False, index=class_index)
     if args.dataset == 'mini_imagenet':
-        trainset = args.Dataset.MiniImageNet(root=args.dataroot, train=True,
-                                             index_path=txt_path, is_clip=args.clip)
-        testset = args.Dataset.MiniImageNet(root=args.dataroot, train=False,
-                                            index=class_index, is_clip=args.clip)
+        trainset = args.Dataset.MiniImageNet(root=args.dataroot, train=True, index_path=txt_path)
+        testset = args.Dataset.MiniImageNet(root=args.dataroot, train=False, index=class_index)
 
     sampler = CategoriesSampler(trainset.targets, args.train_episode, args.episode_way,
                                 args.episode_shot + args.episode_query)
@@ -374,7 +368,7 @@ def get_base_dataloader_meta(args):
 
 
 def get_new_dataloader(args,session, clip_trsf=None):
-    txt_path = "D:/Code/pythonCode/PriViLege/data/index_list/" + args.dataset + "/session_" + str(session + 1) + '.txt'
+    txt_path = "/root/autodl-tmp/remake_PriviLege/data/index_list/" + args.dataset + "/session_" + str(session + 1) + '.txt'
     if args.dataset == 'cifar100':
         if args.clip:
             class_index = open(txt_path).read().splitlines()
@@ -385,11 +379,9 @@ def get_new_dataloader(args,session, clip_trsf=None):
             trainset = args.Dataset.CIFAR100(root=args.dataroot, train=True, download=False,
                                          index=class_index, base_sess=False,is_vit=args.vit, is_clip=args.clip)
     if args.dataset == 'cub200':
-        trainset = args.Dataset.CUB200(root=args.dataroot, train=True,
-                                       index_path=txt_path, is_clip=args.clip)
+        trainset = args.Dataset.CUB200(root=args.dataroot, train=True, index_path=txt_path)
     if args.dataset == 'mini_imagenet':
-        trainset = args.Dataset.MiniImageNet(root=args.dataroot, train=True,
-                                       index_path=txt_path, is_clip=args.clip)
+        trainset = args.Dataset.MiniImageNet(root=args.dataroot, train=True, index_path=txt_path)
     if args.batch_size_new == 0:
         batch_size_new = trainset.__len__()
         trainloader = torch.utils.data.DataLoader(dataset=trainset, batch_size=batch_size_new, shuffle=False,
@@ -409,11 +401,9 @@ def get_new_dataloader(args,session, clip_trsf=None):
             testset = args.Dataset.CIFAR100(root=args.dataroot, train=False, download=False, transform=clip_trsf,
                                             index=class_new, base_sess=False,is_vit=args.vit, is_clip=args.clip)
     if args.dataset == 'cub200':
-        testset = args.Dataset.CUB200(root=args.dataroot, train=False,
-                                      index=class_new, is_clip=args.clip)
+        testset = args.Dataset.CUB200(root=args.dataroot, train=False, index=class_new)
     if args.dataset == 'mini_imagenet':
-        testset = args.Dataset.MiniImageNet(root=args.dataroot, train=False,
-                                      index=class_new, is_clip=args.clip)
+        testset = args.Dataset.MiniImageNet(root=args.dataroot, train=False, index=class_new)
 
     testloader = torch.utils.data.DataLoader(dataset=testset, batch_size=args.test_batch_size, shuffle=False,
                                              num_workers=args.num_workers)

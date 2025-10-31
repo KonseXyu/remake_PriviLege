@@ -11,42 +11,26 @@ from torchvision import transforms
 class CUB200(Dataset):
 
     def __init__(self, root='./', train=True,
-                 index_path=None, index=None, base_sess=None, is_clip=False):
+                 index_path=None, index=None, base_sess=None):
         self.root = os.path.expanduser(root)
         self.train = train  # training set or test set\
         self.labels = []
         self._pre_operate(self.root)
 
         if train:
-            if is_clip:
-                self.transform = self.transform = transforms.Compose([
-                    transforms.Resize(224),
-                    transforms.CenterCrop(224),
-                    transforms.ToTensor(),
-                    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-                ])
-            else:
-                self.transform = transforms.Compose([
-                    transforms.Resize(256),
-                    transforms.RandomResizedCrop(224),
-                    transforms.RandomHorizontalFlip(),
-                    transforms.ToTensor(),
-                    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-                ])
+            self.transform = transforms.Compose([
+                transforms.Resize(256),
+                transforms.RandomResizedCrop(224),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            ])
             if base_sess:
                 self.data, self.targets = self.SelectfromClasses(self.data, self.targets, index)
             else:
                 self.data, self.targets = self.SelectfromTxt(self.data2label, index_path)
         else:
-            if is_clip:
-                self.transform = transforms.Compose([
-                    transforms.Resize(224),
-                    transforms.CenterCrop(224),
-                    transforms.ToTensor(),
-                    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-                ])
-            else:
-                self.transform = transforms.Compose([
+            self.transform = transforms.Compose([
                     transforms.Resize(256),
                     transforms.CenterCrop(224),
                     transforms.ToTensor(),
@@ -157,8 +141,7 @@ if __name__ == '__main__':
     class_index = np.arange(base_class)
     dataroot = 'D:/Code/pythonCode/data'
     batch_size_base = 400
-    trainset = CUB200(root=dataroot, train=False,  index=class_index,
-                      base_sess=True)
+    trainset = CUB200(root=dataroot, train=False, index=class_index, base_sess=True)
     cls = np.unique(trainset.targets)
     trainloader = torch.utils.data.DataLoader(dataset=trainset, batch_size=batch_size_base, shuffle=True, num_workers=8,
                                               pin_memory=True)

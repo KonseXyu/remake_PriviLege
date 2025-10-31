@@ -12,7 +12,7 @@ class MiniImageNet(Dataset):
 
     def __init__(self, root='./data', train=True,
                  transform=None,
-                 index_path=None, index=None, base_sess=None, is_clip=False):
+                 index_path=None, index=None, base_sess=None):
         if train:
             setname = 'train'
         else:
@@ -99,7 +99,7 @@ class MiniImageNet(Dataset):
 
     def mapping_clsidx_to_txt(self):
         classes = {}
-        lines = [x.strip() for x in open('D:\Code\pythonCode\PriViLege\dataloader\miniimagenet\map_clsloc.txt', 'r').readlines()][1:]
+        lines = [x.strip() for x in open('/root/autodl-tmp/remake_PriviLege/dataloader/miniimagenet/map_clsloc.txt', 'r').readlines()][1:]
         for l in lines:
             name, class_num, class_txt = l.split(' ')
             if name not in classes.keys():

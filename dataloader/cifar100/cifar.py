@@ -50,7 +50,7 @@ class CIFAR10(VisionDataset):
     }
 
     def __init__(self, root, train=True, transform=None, target_transform=None,
-                 download=False, index=None, base_sess=None,is_vit=False, is_clip=False):
+                 download=False, index=None, base_sess=None,is_vit=False):
 
         super(CIFAR10, self).__init__(root, transform=transform,
                                       target_transform=target_transform)
@@ -65,7 +65,7 @@ class CIFAR10(VisionDataset):
             raise RuntimeError('Dataset not found or corrupted.' +
                                ' You can use download=True to download it')
 
-        if is_vit or is_clip:
+        if is_vit:
             mean=[0.507, 0.487, 0.441]
             std=[0.267, 0.256, 0.276]
             inp_size = 224

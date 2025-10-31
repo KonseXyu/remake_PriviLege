@@ -47,14 +47,13 @@ for seed in seeds:
                 '-ED '
                 '-SKD '
                 '-LT '
-                  
                 '-cross_dataset '
-                '-base_dataset cub200 '
+                '-base_dataset mini_imagenet '
                 '-inc_dataset cub200 '
                 # '-base_dataroot dataroot '
                 # '-inc_dataroot dataroot '
                 '-inc_way 10 '
-                '-inc_sessions 3 '
+                '-inc_sessions 20 '
                   
                 '-out {} '
                 '-dataroot {}'.format(project, dataset, lr_base, lr_new, epochs_base, epochs_new, milestones_list[i], gpu_num, seed, 'PriViLege', data_dir)
