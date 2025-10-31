@@ -37,7 +37,7 @@ for seed in seeds:
                 '-schedule Cosine '
                 '-milestones {} '
                 '-gpu {} '
-                '-temperature 16 '
+                '-temperature 2 '
                 '-start_session 0 '
                 '-batch_size_base 32 '
                 '-seed {} '
@@ -47,6 +47,15 @@ for seed in seeds:
                 '-ED '
                 '-SKD '
                 '-LT '
+                  
+                '-cross_dataset '
+                '-base_dataset cub200 '
+                '-inc_dataset mini_imagenet '
+                # '-base_dataroot dataroot '
+                # '-inc_dataroot dataroot '
+                '-inc_way 5 '
+                '-inc_sessions 3 '
+                  
                 '-out {} '
                 '-dataroot {}'.format(project, dataset, lr_base, lr_new, epochs_base, epochs_new, milestones_list[i], gpu_num, seed, 'PriViLege', data_dir)
                 )

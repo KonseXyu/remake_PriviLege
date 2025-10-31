@@ -206,8 +206,8 @@ def knowledge_boosting(lang_embed, word_embed, query_info, train_label, loss_cur
     #* KL Feature
     loss_kd = F.kl_div(F.log_softmax(lang_embed/T,dim=1), F.softmax(word_embed[train_label]/T,dim=1), reduction='batchmean')
     
-    loss = loss_kd + 0.2*loss_seman
-    return 0.1*loss
+    loss = loss_kd + 0.1*loss_seman
+    return 0.5*loss
 
 
 def test(model, testloader, epoch, args, session, word_info):
