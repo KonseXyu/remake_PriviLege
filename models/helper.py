@@ -16,56 +16,56 @@ from transformers import BertTokenizer, BertModel
 import numpy as np
 import torch
 
+
+def _dataset_class_info(train_set, dataset):
+    class_attribute_map = {
+        "cifar100": "classes",
+        "mini_imagenet": "wnids",
+        "cub200": "labels",
+        "air": "labels",
+    }
+
+    if dataset not in class_attribute_map:
+        raise KeyError(f"Unsupported dataset: {dataset}")
+
+    class_attr = class_attribute_map[dataset]
+    classes = np.array(getattr(train_set, class_attr))
+    all_unique_classes = np.unique(classes)
+    classes_int = np.unique(train_set.targets)
+    selected_classes = classes[classes_int]
+
+    if dataset in {"cub200", "air"}:
+        selected_classes = np.unique(selected_classes)
+
+    return all_unique_classes, classes_int, selected_classes
+
+
 def build_label_embedding(train_set,session,Bert_model,tokenizer,word_info, args):
-    if args.dataset == "cifar100":
-        classes = np.unique(train_set.classes)
-        print("Number of classes:", len(classes))
-        classes_int = np.unique(train_set.targets)
-        print("classes_int:",classes_int)
-        print('new classes for session {} : {} \n'.format(session, classes[classes_int]))
-    elif args.dataset == "mini_imagenet":
-        classes = np.unique(train_set.wnids)
-        print("Number of classes:", len(classes))
-        classes_int = np.unique(train_set.targets)
-        print("classes_int:",classes_int)
-        print('new classes for session {} : {} \n'.format(session, classes[classes_int]))
-    elif args.dataset == "cub200" or args.dataset == "air":
-        classes = np.unique(np.array(train_set.labels)[train_set.targets])
-        print("Number of classes:", len(classes))
-        classes_int = np.unique(train_set.targets)
-        print("classes_int:",classes_int)
-        print('new classes for session {} : {} \n'.format(session, classes))
-        
-    else:
-        raise KeyError
-    
+    all_classes, classes_int, selected_classes = _dataset_class_info(train_set, args.dataset)
+
+    print("Number of classes:", len(all_classes))
+    print("classes_int:",classes_int)
+    print('new classes for session {} : {} \n'.format(session, selected_classes))
+
     words_embed = []
     with torch.no_grad():
         Bert_model.eval()
-        if args.dataset in ['cifar100', 'mini_imagenet']:
-            for cls in classes[classes_int]:
-                encoded_input = tokenizer(f'a photo of {cls}', return_tensors='pt')
-                output = Bert_model(**encoded_input)
-                # words_embed.append(bert_map(output.pooler_output))
-                words_embed.append(output.pooler_output)
-                word_info["label_text"] = np.append(word_info["label_text"], cls)
-        elif args.dataset in ['cub200', 'air']:
-            for cls in classes:
-                encoded_input = tokenizer(f'a photo of {cls}', return_tensors='pt')
-                output = Bert_model(**encoded_input)
-                # words_embed.append(bert_map(output.pooler_output))
-                words_embed.append(output.pooler_output)
-                word_info["label_text"] = np.append(word_info["label_text"], f'a photo of {cls}')
-        else:
-            raise KeyError
-        
+        for cls in selected_classes:
+            phrase = f'a photo of {cls}'
+            encoded_input = tokenizer(phrase, return_tensors='pt')
+            output = Bert_model(**encoded_input)
+            words_embed.append(output.pooler_output)
+
+            label_phrase = cls if args.dataset in ['cifar100', 'mini_imagenet'] else phrase
+            word_info["label_text"] = np.append(word_info["label_text"], label_phrase)
+
     words_embed = torch.cat(words_embed,dim=0)
-    
-    if word_info["embed"] == None:
+
+    if word_info["embed"] is None:
         word_info["embed"] = words_embed.cpu()
     else:
         word_info["embed"] = torch.cat([word_info["embed"].cpu(),words_embed.cpu()],dim=0)
-        
+
     word_info["cur_embed"] = words_embed.cpu()
     word_info["cur_label"] = torch.tensor(classes_int).cpu()
 
