@@ -16,52 +16,52 @@ from transformers import BertTokenizer, BertModel
 import numpy as np
 import torch
 
-
-def _dataset_class_info(train_set, dataset):
-    class_attribute_map = {
-        "cifar100": "classes",
-        "mini_imagenet": "wnids",
-        "cub200": "labels",
-        "air": "labels",
-    }
-
-    if dataset not in class_attribute_map:
-        raise KeyError(f"Unsupported dataset: {dataset}")
-
-    class_attr = class_attribute_map[dataset]
-    classes = np.array(getattr(train_set, class_attr))
-    all_unique_classes = np.unique(classes)
-    classes_int = np.unique(train_set.targets)
-    selected_classes = classes[classes_int]
-
-    if dataset in {"cub200", "air"}:
-        selected_classes = np.unique(selected_classes)
-
-    return all_unique_classes, classes_int, selected_classes
-
-
 def build_label_embedding(train_set,session,Bert_model,tokenizer,word_info, args):
-    all_classes, classes_int, selected_classes = _dataset_class_info(train_set, args.dataset)
+    if args.dataset == "cifar100":
+        classes = np.unique(train_set.classes)
+        print("Number of classes:", len(classes))
+        classes_int = np.unique(train_set.targets)
+        print("classes_int:",classes_int)
+        print('new classes for session {} : {} \n'.format(session, classes[classes_int]))
+    elif args.dataset == "mini_imagenet":
+        classes = np.unique(train_set.wnids)
+        print("Number of classes:", len(classes))
+        classes_int = np.unique(train_set.targets)
+        print("classes_int:",classes_int)
+        print('new classes for session {} : {} \n'.format(session, classes[classes_int]))
+    elif args.dataset == "cub200" or args.dataset == "air":
+        classes = np.unique(np.array(train_set.labels)[train_set.targets])
+        print("Number of classes:", len(classes))
+        classes_int = np.unique(train_set.targets)
+        print("classes_int:",classes_int)
+        print('new classes for session {} : {} \n'.format(session, classes))
 
-    print("Number of classes:", len(all_classes))
-    print("classes_int:",classes_int)
-    print('new classes for session {} : {} \n'.format(session, selected_classes))
+    else:
+        raise KeyError
 
     words_embed = []
     with torch.no_grad():
         Bert_model.eval()
-        for cls in selected_classes:
-            phrase = f'a photo of {cls}'
-            encoded_input = tokenizer(phrase, return_tensors='pt')
-            output = Bert_model(**encoded_input)
-            words_embed.append(output.pooler_output)
-
-            label_phrase = cls if args.dataset in ['cifar100', 'mini_imagenet'] else phrase
-            word_info["label_text"] = np.append(word_info["label_text"], label_phrase)
+        if args.dataset in ['cifar100', 'mini_imagenet']:
+            for cls in classes[classes_int]:
+                encoded_input = tokenizer(f'a photo of {cls}', return_tensors='pt')
+                output = Bert_model(**encoded_input)
+                # words_embed.append(bert_map(output.pooler_output))
+                words_embed.append(output.pooler_output)
+                word_info["label_text"] = np.append(word_info["label_text"], cls)
+        elif args.dataset in ['cub200', 'air']:
+            for cls in classes:
+                encoded_input = tokenizer(f'a photo of {cls}', return_tensors='pt')
+                output = Bert_model(**encoded_input)
+                # words_embed.append(bert_map(output.pooler_output))
+                words_embed.append(output.pooler_output)
+                word_info["label_text"] = np.append(word_info["label_text"], f'a photo of {cls}')
+        else:
+            raise KeyError
 
     words_embed = torch.cat(words_embed,dim=0)
 
-    if word_info["embed"] is None:
+    if word_info["embed"] == None:
         word_info["embed"] = words_embed.cpu()
     else:
         word_info["embed"] = torch.cat([word_info["embed"].cpu(),words_embed.cpu()],dim=0)
@@ -86,7 +86,7 @@ def replace_base_fc(trainset, transform, model, args):
             embedding = model(data, query=True)
             embedding_list.append(embedding.cpu())
             label_list.append(label.cpu())
-        
+
     embedding_list = torch.cat(embedding_list, dim=0)
     label_list = torch.cat(label_list, dim=0)
 
@@ -115,13 +115,13 @@ def cross_entropy(preds, targets, reduction='none'):
 def base_train(model, trainloader, optimizer, scheduler, epoch, word_info, query_info, class_list, args, loss_curve):
     print("[Base Train]")
     base_mode = model.module.mode
-    
+
     tl = Averager_Loss()
     ta = Averager()
     model = model.train()
     tqdm_gen = tqdm(trainloader, mininterval=1.0)
     model.module.mode = "encoder"
-    
+
     word_cur_embed = word_info['cur_embed'].clone().detach().cuda()
     word_embed = word_info['embed'].clone().detach().cuda()
     for i, batch in enumerate(tqdm_gen, 1):
@@ -132,32 +132,32 @@ def base_train(model, trainloader, optimizer, scheduler, epoch, word_info, query
         if train_label.dtype != torch.long:
             train_label = train_label.long()  # <--- 增加此行进行类型转换！
         loss_ce = F.cross_entropy(logits_, train_label)
-        
+
         if args.ED:
             loss_tri = triplet(cls_embed, prompt_embed['Vision'], query_info, train_label,loss_curve)
         else:
             loss_tri = torch.zeros(1,device='cuda')
-        
+
         if args.SKD:
             loss_kb = knowledge_boosting(prompt_embed['Language'], word_embed, query_info, train_label,loss_curve)
             # loss_kb = knowledge_boosting(prompt_embed['Language'], word_embed, word_cur_embed, train_label)
         else:
             loss_kb = torch.zeros(1,device='cuda')
-        
+
         acc = count_acc(logits_, train_label)
         total_loss = loss_ce + args.ED_hp*loss_tri + loss_kb
-        
+
         lrc = scheduler.get_last_lr()[0]
         tl.add(total_loss.item(), len(train_label))
         ta.add(acc, len(train_label))
-        
+
         tqdm_gen.set_description(
-            'Session 0, epo {}, lrc={:.4f},total loss={:.4f}, loss_CE={:.4f}, loss_ED={:.4f}, loss_SKD={:.4f}, acc={:.4f}'.\
+            'Session 0, epo {}, lrc={:.4f},total loss={:.4f}, loss_CE={:.4f}, loss_ED={:.4f}, loss_SKD={:.4f}, acc={:.4f}'. \
                 format(epoch, lrc, total_loss.item(), loss_ce.item(), loss_tri.item(), loss_kb.item(), ta.item()))
-        
+
         optimizer.zero_grad()
         total_loss.backward()
-        
+
         grad={}
         grad['expert_prompt']=model.module.expert_prompt.grad.clone().detach().cpu()
         grad['prompt']=model.module.prompt.grad.clone().detach().cpu()
@@ -165,32 +165,32 @@ def base_train(model, trainloader, optimizer, scheduler, epoch, word_info, query
             if 'attn.qkv.weight' in n:
                 grad[n] = torch.norm(p.clone().detach().cpu(),p=2,dim=1).mean()
         loss_curve['grad_list'].append(grad)
-        
+
         optimizer.step()
-        
+
     tl = tl.item()
     ta = ta.item()
-    
+
     model.module.mode = base_mode
     return tl, ta
 
 
 def triplet(cls_embed, vision_embed, query_info, train_label,loss_curve):
     P_head = query_info['proto'].clone().cuda()
-    
+
     cls_logit = F.linear(cls_embed, P_head)
     cls_gt = F.cross_entropy(cls_logit, train_label, reduction='none')   #* B
     vis_logit = F.linear(vision_embed, P_head)
     vis_gt = F.cross_entropy(vis_logit, train_label, reduction='none')   #* B
-    
+
     idx = torch.arange(vis_logit.shape[0])
-    
+
     cls_logit[idx, train_label]=0.
     vis_logit[idx, train_label]=0.
-    
+
     l_kl = F.kl_div(F.log_softmax(vis_logit,dim=1), F.softmax(cls_logit,dim=1), reduction='batchmean')
     l_ent = vis_gt.mean() + cls_gt.mean()
-    
+
     loss_tri = ((l_ent/l_kl)+1).log()
     return loss_tri
 
@@ -199,15 +199,15 @@ def knowledge_boosting(lang_embed, word_embed, query_info, train_label, loss_cur
     idx= torch.arange(len(train_label))
     #* Original
     P_head = query_info['proto'].clone().cuda()
-    
+
     #* =======================================================================
     lang_logit = F.linear(lang_embed, P_head)    #* Soft pred
     loss_seman = F.cross_entropy(lang_logit, train_label)
     #* KL Feature
     loss_kd = F.kl_div(F.log_softmax(lang_embed/T,dim=1), F.softmax(word_embed[train_label]/T,dim=1), reduction='batchmean')
-    
-    loss = loss_kd + 0.2*loss_seman
-    return 0.1*loss
+
+    loss = loss_kd + 0.1*loss_seman
+    return 0.5*loss
 
 
 def test(model, testloader, epoch, args, session, word_info):
@@ -230,7 +230,7 @@ def test(model, testloader, epoch, args, session, word_info):
             if test_label.dtype != torch.long:
                 test_label = test_label.long()  # <--- 增加此行进行类型转换！
             loss = F.cross_entropy(logits, test_label)
-            
+
             acc = count_acc(logits, test_label)
 
             base_idxs = test_label < args.base_class
@@ -270,18 +270,18 @@ def test(model, testloader, epoch, args, session, word_info):
 
 def build_base_proto(train_loader, model, query_info, args):
     model = model.eval()
-    
+
     embedding_list = []
     label_list = []
     with torch.no_grad():
         for i, batch in enumerate(train_loader):
             data, label = [_.cuda() for _ in batch]
-            
+
             model.module.mode = 'encoder'
             embedding = model(data, query=True)
             embedding_list.append(embedding.cpu())
             label_list.append(label.cpu())
-            
+
     embedding_list = torch.cat(embedding_list, dim=0)
     label_list = torch.cat(label_list, dim=0)
 
