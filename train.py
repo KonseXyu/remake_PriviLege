@@ -30,8 +30,7 @@ def get_command_line_parser():
     parser.add_argument('-step', type=int, default=80)
     parser.add_argument('-decay', type=float, default=0.0005)
     parser.add_argument('-momentum', type=float, default=0.9)
-    parser.add_argument('-gamma', type=float, default=0.1)
-    parser.add_argument('-temperature', type=int, default=2)
+
     parser.add_argument('-not_data_init', action='store_true', help='using average data embedding to init or not')
 
     parser.add_argument('-batch_size_base', type=int, default=128)
@@ -76,9 +75,15 @@ def get_command_line_parser():
     parser.add_argument('-LT', action='store_true')
     parser.add_argument('-WC', action='store_true')
     parser.add_argument('-MP', action='store_true')
-    
-    
+
+
     parser.add_argument('-SKD', action='store_true')
+    parser.add_argument('-gamma', type=float, default=0.1)
+    parser.add_argument('-inc_gamma', type=float, default=0.1)
+    parser.add_argument('-temperature', type=float, default=2.)
+    parser.add_argument('-inc_temperature', type=float, default=2.)
+    parser.add_argument('-base_skd_weight', type=float, default=0.5)
+    parser.add_argument('-inc_skd_weight', type=float, default=0.5)
 
     parser.add_argument('-prefix', action='store_true')
     parser.add_argument('-pret_clip', action='store_true')

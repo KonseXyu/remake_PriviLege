@@ -225,40 +225,52 @@ class ViT_MYNET(nn.Module):
     def train_inc(self, dataloader, epochs, session, class_list, word_info, query_info):
         print("[Session: {}]".format(session))
         self.update_fc_avg(dataloader, class_list, query_info)
-        
-        for idx,batch in enumerate(dataloader):
+        # ---- 1. 在所有循环之外，只创建一次优化器和调度器 ----
+        optim = torch.optim.Adam(filter(lambda p: p.requires_grad, self.parameters()), lr=self.args.lr_new)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, T_max=epochs)
 
-            data_imgs, data_label = [_.cuda() for _ in batch]
-            optim = torch.optim.Adam(filter(lambda p: p.requires_grad, self.parameters()), lr=self.args.lr_new)
-            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, T_max=epochs)
-            
-            word_cur_embed = word_info['cur_embed'].cuda()
-            word_embed = word_info['embed'].cuda()
-            for epoch in range(epochs):
-                self.train()
-                cls_feat, prompt_feat = self.prompt_encode(data_imgs ,prompt_feat=True, B_tuning=True)
-                
-                logits = self.get_logits(0.5*(prompt_feat['Vision'] + cls_feat), self.fc)
+        word_cur_embed = word_info['cur_embed'].cuda()
+        word_embed = word_info['embed'].cuda()
+
+        # ---- 2. 外循环：遍历 Epochs (周期) ----
+        for epoch in range(epochs):
+            self.train()
+
+            # ---- 3. 内循环：遍历 Dataloader (批次) ----
+            for idx, batch in enumerate(dataloader):
+                data_imgs, data_label = [_.cuda() for _ in batch]
+
+                cls_feat, prompt_feat = self.prompt_encode(data_imgs, prompt_feat=True, B_tuning=True)
+                logits = self.get_logits(0.5 * (prompt_feat['Vision'] + cls_feat), self.fc)
+
                 if data_label.dtype != torch.long:
-                    data_label = data_label.long()  # <--- 增加此行进行类型转换！
+                    data_label = data_label.long()
+
                 loss_ce = F.cross_entropy(logits, data_label)
+
                 if self.args.SKD:
                     loss_kb = self.knowledge_boosting(prompt_feat["Language"], word_embed, query_info, data_label)
                     loss = loss_ce + loss_kb
                 else:
                     loss = loss_ce
-                
+
                 optim.zero_grad()
                 loss.backward()
-                
+
+                # ---- 4. 优化器在每个批次后更新 ----
                 optim.step()
-                scheduler.step()
+
+                # Logging
                 pred = torch.argmax(logits, dim=1)
-                acc = (pred == data_label).sum().item()/data_label.shape[0]*100.
+                acc = (pred == data_label).sum().item() / data_label.shape[0] * 100.0
                 if self.args.SKD:
-                    print(f"[{epoch}/{epochs}] Loss_CE:{loss_ce.item():.4f} loss_kb:{loss_kb.item():.4f} ACC: {acc}")
+                    print(f"[{epoch + 1}/{epochs}] step {idx + 1}/{len(dataloader)} "
+                          f"Loss_CE:{loss_ce.item():.4f} loss_kb:{loss_kb.item():.4f} ACC:{acc:.2f}")
                 else:
-                    print(f"[{epoch}/{epochs}] Loss_CE:{loss_ce.item():.4f} ACC: {acc}")
+                    print(f"[{epoch + 1}/{epochs}] step {idx + 1}/{len(dataloader)} "
+                          f"Loss_CE:{loss_ce.item():.4f} ACC:{acc:.2f}")
+            # Step LR once per epoch (CosineAnnealing is epoch-based here)
+            scheduler.step()
 
 
     def head_reg(self, head_feat, word_cur_feat, label):
@@ -268,14 +280,13 @@ class ViT_MYNET(nn.Module):
 
     def knowledge_boosting(self, lang_embed, word_embed, query_info, label):
         P_head = query_info['proto'].clone().cuda()
-        T = 2.
+        T = self.args.inc_temperature
         lang_logit = F.linear(lang_embed, P_head)
         loss_seman = F.cross_entropy(lang_logit, label)
 
         loss_kd = F.kl_div(F.log_softmax(lang_embed/T,dim=1), F.softmax(word_embed[label]/T,dim=1), reduction='batchmean')
-        loss = loss_kd + 0.2*loss_seman
-        # return 0.5*loss
-        return 0.1*loss
+        loss = loss_kd + self.args.inc_gamma * loss_seman
+        return self.args.inc_skd_weight * loss
 
     def update_fc_avg(self,dataloader,class_list,query_info):
         self.eval()

@@ -139,7 +139,7 @@ def base_train(model, trainloader, optimizer, scheduler, epoch, word_info, query
             loss_tri = torch.zeros(1,device='cuda')
         
         if args.SKD:
-            loss_kb = knowledge_boosting(prompt_embed['Language'], word_embed, query_info, train_label,loss_curve)
+            loss_kb = knowledge_boosting(prompt_embed['Language'], word_embed, query_info, train_label,loss_curve, args)
             # loss_kb = knowledge_boosting(prompt_embed['Language'], word_embed, word_cur_embed, train_label)
         else:
             loss_kb = torch.zeros(1,device='cuda')
@@ -194,8 +194,8 @@ def triplet(cls_embed, vision_embed, query_info, train_label,loss_curve):
     loss_tri = ((l_ent/l_kl)+1).log()
     return loss_tri
 
-def knowledge_boosting(lang_embed, word_embed, query_info, train_label, loss_curve):
-    T = 2.
+def knowledge_boosting(lang_embed, word_embed, query_info, train_label, loss_curve, args):
+    T = args.temperature
     idx= torch.arange(len(train_label))
     #* Original
     P_head = query_info['proto'].clone().cuda()
@@ -206,8 +206,8 @@ def knowledge_boosting(lang_embed, word_embed, query_info, train_label, loss_cur
     #* KL Feature
     loss_kd = F.kl_div(F.log_softmax(lang_embed/T,dim=1), F.softmax(word_embed[train_label]/T,dim=1), reduction='batchmean')
     
-    loss = loss_kd + 0.1*loss_seman
-    return 0.5*loss
+    loss = loss_kd + args.gamma * loss_seman
+    return args.base_skd_weight * loss
 
 
 def test(model, testloader, epoch, args, session, word_info):
