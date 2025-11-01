@@ -76,6 +76,10 @@ def get_command_line_parser():
     parser.add_argument('-WC', action='store_true')
     parser.add_argument('-MP', action='store_true')
 
+    parser.add_argument('-proto_classifier', action='store_true',
+                        help='Use prototype-cosine + temperature as classifier for train/test')
+    parser.add_argument('-proto_temp', type=float, default=10.0,
+                        help='Temperature for prototype-cosine classifier (default=10.0)')
 
     parser.add_argument('-SKD', action='store_true')
     parser.add_argument('-gamma', type=float, default=0.1)

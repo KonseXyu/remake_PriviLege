@@ -241,7 +241,15 @@ class ViT_MYNET(nn.Module):
                 data_imgs, data_label = [_.cuda() for _ in batch]
 
                 cls_feat, prompt_feat = self.prompt_encode(data_imgs, prompt_feat=True, B_tuning=True)
-                logits = self.get_logits(0.5 * (prompt_feat['Vision'] + cls_feat), self.fc)
+                if self.args.proto_classifier:
+                    combined = 0.5 * (prompt_feat['Vision'] + cls_feat)
+                    combined = F.normalize(combined, dim=1)
+                    # 用已见类的原型（query_info['proto'] 会在每个 session 追加，见 update_fc_avg）
+                    P = query_info['proto'].clone().cuda()
+                    P = F.normalize(P, dim=1)
+                    logits = self.args.proto_temp * F.linear(combined, P)
+                else:
+                    logits = self.get_logits(0.5 * (prompt_feat['Vision'] + cls_feat), self.fc)
 
                 if data_label.dtype != torch.long:
                     data_label = data_label.long()

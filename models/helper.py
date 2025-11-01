@@ -128,7 +128,19 @@ def base_train(model, trainloader, optimizer, scheduler, epoch, word_info, query
         data, train_label = [_.cuda() for _ in batch]
 
         logits, cls_embed, prompt_embed = model(data, base=True)
-        logits_ = logits[:, :args.base_class]
+
+        if args.proto_classifier:
+            # 组合特征：与 PriViLege 一致，用 0.5*(CLS + Vision)
+            combined = 0.5 * (cls_embed + prompt_embed['Vision'])
+            # 归一化
+            combined = F.normalize(combined, dim=1)
+            # 取 base-session 的原型（来自 build_base_proto）
+            P = query_info['proto'][:args.base_class].clone().cuda()
+            P = F.normalize(P, dim=1)
+            logits_ = args.proto_temp * F.linear(combined, P)  # 余弦 * 温度
+        else:
+            logits_ = logits[:, :args.base_class]
+
         if train_label.dtype != torch.long:
             train_label = train_label.long()  # <--- 增加此行进行类型转换！
         loss_ce = F.cross_entropy(logits_, train_label)
@@ -210,7 +222,7 @@ def knowledge_boosting(lang_embed, word_embed, query_info, train_label, loss_cur
     return args.base_skd_weight * loss
 
 
-def test(model, testloader, epoch, args, session, word_info):
+def test(model, testloader, epoch, args, session, word_info, query_info=None):
     #todo Test시 Prompt Selection is needed..
     test_class = args.base_class + session * args.way
     model = model.eval()
@@ -225,8 +237,26 @@ def test(model, testloader, epoch, args, session, word_info):
         tqdm_gen = tqdm(testloader)
         for i, batch in enumerate(tqdm_gen, 1):
             data, test_label = [_.cuda() for _ in batch]
-            logits = model(data, B_tuning=True)
-            logits = logits[:, :test_class]
+            if args.proto_classifier:
+                # 直接用 prompt_encode 避开 forward 的 mode 分支
+                cls_embed, prompt_embed = model.module.prompt_encode(
+                    data, prompt_feat=True, B_tuning=True, eval=False
+                )
+                combined = 0.5 * (cls_embed + prompt_embed['Vision'])
+                combined = F.normalize(combined, dim=1)
+
+                if query_info is not None and query_info.get('proto', None) is not None:
+                    P = query_info['proto'][:test_class].clone().cuda()
+                else:
+                    # 兜底：用 FC 权重当原型（如果之前已 replace_fc / update_fc_avg，会等价）
+                    P = model.module.fc.weight[:test_class].detach()
+                P = F.normalize(P, dim=1)
+
+                logits = args.proto_temp * F.linear(combined, P)
+            else:
+                logits = model(data, B_tuning=True)
+                logits = logits[:, :test_class]
+
             if test_label.dtype != torch.long:
                 test_label = test_label.long()  # <--- 增加此行进行类型转换！
             loss = F.cross_entropy(logits, test_label)
@@ -333,7 +363,7 @@ ECE（Expected Calibration Error）（可选但强烈建议）
 """
 
 @torch.no_grad()
-def test_cross_domain(model, testloader, epoch, args, session, word_info):
+def test_cross_domain(model, testloader, epoch, args, session, word_info, query_info=None):
     """
     Cross-dataset evaluation with domain-aware metrics.
 
@@ -416,7 +446,25 @@ def test_cross_domain(model, testloader, epoch, args, session, word_info):
         test_label = test_label.to(device).long()
 
         # forward & restrict to seen classes this session
-        logits = model(data, B_tuning=True)[:, :test_class]
+        if getattr(args, 'proto_classifier', False):
+            # 取 CLS 与 Vision 两路特征，并做与训练一致的组合
+            cls_embed, prompt_embed = model.module.prompt_encode(
+                data, prompt_feat=True, B_tuning=True, eval=False
+            )
+            combined = 0.5 * (cls_embed + prompt_embed['Vision'])
+            combined = F.normalize(combined, dim=1)
+
+            # 取“已见类”的原型作为分类器（优先用 query_info['proto']，兜底用 FC 权重）
+            if (query_info is not None) and (query_info.get('proto', None) is not None):
+                P = query_info['proto'][:test_class].clone().cuda()
+            else:
+                P = model.module.fc.weight[:test_class].detach()
+            P = F.normalize(P, dim=1)
+
+            logits = getattr(args, 'proto_temp', 10.0) * F.linear(combined, P)
+        else:
+            logits = model(data, B_tuning=True)[:, :test_class]
+
         loss = F.cross_entropy(logits, test_label)
 
         # overall

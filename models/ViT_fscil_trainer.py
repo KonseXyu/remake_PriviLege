@@ -298,7 +298,7 @@ class ViT_FSCILTrainer(Trainer):
                     start_time = time.time()
                     # train base sess
                     tl, ta = base_train(self.model, trainloader, optimizer, scheduler, epoch, self.word_info, self.query_info, np.unique(train_set.targets), args, self.loss_curve)
-                    tsl, tsa, logs = test(self.model, testloader, epoch, args, session,self.word_info)
+                    tsl, tsa, logs = test(self.model, testloader, epoch, args, session,self.word_info, self.query_info)
                     if (tsa * 100) >= self.trlog['max_acc'][session]:
                         self.trlog['max_acc'][session] = float('%.3f' % (tsa * 100))
                         self.trlog['max_acc_epoch'] = epoch
@@ -339,7 +339,7 @@ class ViT_FSCILTrainer(Trainer):
                     self.best_model_dict = deepcopy(self.model.state_dict())
 
                     self.model.module.mode = 'avg_cos'
-                    tsl, tsa, logs = test(self.model, testloader, 0, args, session,self.word_info)
+                    tsl, tsa, logs = test(self.model, testloader, 0, args, session,self.word_info, self.query_info)
                     self.trlog['max_acc'][session] = float('%.3f' % (tsa * 100))
                     print('The new best test acc of base session={:.3f}'.format(self.trlog['max_acc'][session]))
 
@@ -375,7 +375,7 @@ class ViT_FSCILTrainer(Trainer):
                 self.model.module.train_inc(trainloader, self.args.epochs_new, session, np.unique(train_set.targets), self.word_info, self.query_info)
                 self.model.eval()
                 self.model.module.mode = 'avg_cos'
-                tsl, tsa, logs = test_fn(self.model, testloader, 0, args, session, self.word_info)
+                tsl, tsa, logs = test_fn(self.model, testloader, 0, args, session, self.word_info, self.query_info)
                 acc_df = acc_df._append(logs, ignore_index=True)
 
                 print("Build Vision ProtoType")

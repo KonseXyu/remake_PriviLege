@@ -52,13 +52,17 @@ for seed in seeds:
                 '-ED '
                 '-SKD '
                 '-LT '
-                '-cross_dataset '
+                # '-cross_dataset '
                 '-base_dataset cub200 '
                 '-inc_dataset cifar100 '
                 # '-base_dataroot dataroot '
                 # '-inc_dataroot dataroot '
+                  
+                '-proto_classifier '
+                '-proto_temp 10.0 '
+                  
                 '-inc_way 5 '
-                '-inc_sessions 20 '
+                '-inc_sessions 2 '
                   
                 '-out {} '
                 '-dataroot {}'.format(project, dataset, lr_base, lr_new, epochs_base, epochs_new, milestones_list[i], gpu_num, seed, 'PriViLege', data_dir)
