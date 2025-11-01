@@ -298,3 +298,230 @@ def build_base_proto(train_loader, model, query_info, args):
     model.module.mode = args.base_mode
     model = model.train()
 
+"""
+Per-Domain Accuracy
+
+acc_base_domain：仅统计来自 base 数据集样本的 Top-1 准确率（使用当前已见全部类别的 logits）。
+
+acc_inc_domain：仅统计来自 inc 数据集样本的 Top-1 准确率。
+
+Cross-Domain Confusion（域间混淆率）
+
+cd_base_to_inc：base 域样本被预测到“任何新类（全局 id ≥ base_class）”的占比。
+
+cd_inc_to_base：inc 域样本被预测到“任何旧类（全局 id < base_class）”的占比。
+
+这两项直接反映是否“偏向某个域的类别”。
+
+Harmonic Mean（平衡性）
+
+类别视角：hm_base_new = H(acc_base_only, acc_new_only)（你已有 base/new-only 的准确率，直接求调和平均）。
+
+域视角：hm_dom = H(acc_base_domain, acc_inc_domain)。
+
+Top-5 Accuracy（overall 或分域）
+
+跨域移植时，top-5 对模型可用性的衡量更稳定。
+
+Balanced Accuracy（宏平均召回）
+
+每个已见类都计算召回，然后求平均，缓解类频不均或域不均的影响。
+
+ECE（Expected Calibration Error）（可选但强烈建议）
+
+用 softmax 置信度做 15 桶标定误差，监控跨域下的校准性。
+"""
+def count_topk_acc(logits, labels, k=5):
+    if logits.numel() == 0:
+        return 0.0
+    topk = logits.topk(k, dim=1).indices
+    correct = topk.eq(labels.unsqueeze(1)).any(dim=1).float().mean().item()
+    return float(correct)
+
+def expected_calibration_error(probs, labels, n_bins=15):
+    # probs: softmax(logits)
+    if probs.numel() == 0:
+        return 0.0
+    conf, pred = probs.max(dim=1)
+    correct = pred.eq(labels).float()
+    ece = probs.new_tensor(0.0)
+    n = labels.numel()
+    bin_edges = torch.linspace(0, 1, steps=n_bins+1, device=probs.device)
+    for i in range(n_bins):
+        lo, hi = bin_edges[i], bin_edges[i+1]
+        mask = (conf > lo) & (conf <= hi if i < n_bins-1 else conf <= hi)
+        if mask.any():
+            acc_bin = correct[mask].mean()
+            conf_bin = conf[mask].mean()
+            ece = ece + (mask.float().sum() / n) * (acc_bin - conf_bin).abs()
+    return float(ece.item())
+
+def _domain_ids_for_batch(start, end, part_lengths, device):
+    """
+    返回长度为 (end-start) 的 LongTensor，值为所属子数据集的 index（0,1,...）。
+    part_lengths: [len(ds0), len(ds1), ...] 对应 ConcatDataset 子集长度。
+    """
+    import numpy as np
+    cum = np.cumsum([0] + list(part_lengths))
+    bsz = end - start
+    dom = torch.zeros(bsz, dtype=torch.long, device=device)
+    for d in range(len(part_lengths)):
+        s = max(start, int(cum[d]))
+        e = min(end,   int(cum[d+1]))
+        if e > s:
+            dom[s-start:e-start] = d
+    return dom
+
+@torch.no_grad()
+def test_cross_domain(model, testloader, epoch, args, session, word_info):
+    """
+    跨数据集测试：在保留原有指标的同时，增加域级准确率、跨域混淆率、Top-5、Balanced Acc 与 ECE。
+    """
+    test_class = args.base_class + session * args.way
+    model.eval()
+
+    vl = Averager_Loss()
+    va_overall = Averager()
+
+    va_base_only = Averager()
+    va_new_only  = Averager()
+    va_base_given_new = Averager()
+    va_new_given_base = Averager()
+
+    # 域级统计
+    va_dom0 = Averager()  # base 域
+    va_dom1 = Averager()  # inc  域（若存在）
+
+    top5_hits = 0
+    total_samples = 0
+
+    # per-class 统计用于 Balanced Acc
+    n_cls = test_class
+    correct_per_c = torch.zeros(n_cls, dtype=torch.long)
+    count_per_c   = torch.zeros(n_cls, dtype=torch.long)
+
+    # ECE
+    all_probs = []
+    all_labels = []
+
+    # 识别每个子数据集长度（用于域掩码）
+    datasets = getattr(testloader.dataset, 'datasets', None)
+    if datasets is not None:
+        part_lengths = [len(d) for d in datasets]
+    else:
+        part_lengths = [len(testloader.dataset)]
+
+    print("\t\t\t[Cross-Domain Test] Session: {}".format(session))
+    seen = 0
+    tqdm_gen = tqdm(testloader)
+    for i, batch in enumerate(tqdm_gen, 1):
+        data, test_label = [_.cuda() for _ in batch]
+        logits = model(data, B_tuning=True)[:, :test_class]
+        if test_label.dtype != torch.long:
+            test_label = test_label.long()
+        loss = F.cross_entropy(logits, test_label)
+
+        # overall top-1
+        acc_overall = count_acc(logits, test_label)
+
+        # 原有 base/new 指标（类别视角）
+        base_mask = test_label < args.base_class
+        new_mask  = ~base_mask
+        if base_mask.any():
+            acc_base_only = count_acc(logits[base_mask, :args.base_class], test_label[base_mask])
+            acc_base_gn   = count_acc(logits[base_mask, :], test_label[base_mask])
+            va_base_only.add(acc_base_only, int(base_mask.sum().item()))
+            va_base_given_new.add(acc_base_gn, int(base_mask.sum().item()))
+        if new_mask.any():
+            acc_new_only = count_acc(logits[new_mask, args.base_class:], test_label[new_mask] - args.base_class)
+            acc_new_gb   = count_acc(logits[new_mask, :], test_label[new_mask])
+            va_new_only.add(acc_new_only, int(new_mask.sum().item()))
+            va_new_given_base.add(acc_new_gb, int(new_mask.sum().item()))
+
+        # ===== 域视角：根据样本全局位置恢复域 id =====
+        bsz = data.size(0)
+        dom_ids = _domain_ids_for_batch(seen, seen+bsz, part_lengths, device=test_label.device)
+        seen += bsz
+
+        dom0 = dom_ids == 0
+        dom1 = dom_ids > 0  # 兼容>2子集的场景：把除第0个以外当作“inc 域”
+
+        if dom0.any():
+            va_dom0.add(count_acc(logits[dom0], test_label[dom0]), int(dom0.sum().item()))
+        if dom1.any():
+            va_dom1.add(count_acc(logits[dom1], test_label[dom1]), int(dom1.sum().item()))
+
+        # 域间混淆率
+        pred = logits.argmax(dim=1)
+        cd_b2i = float( ((dom0) & (pred >= args.base_class)).float().sum().item() / max(1, int(dom0.sum().item())) )
+        cd_i2b = float( ((dom1) & (pred <  args.base_class)).float().sum().item() / max(1, int(dom1.sum().item())) )
+
+        # top-5（overall）
+        top5_hits += (logits.topk(5, dim=1).indices.eq(test_label.unsqueeze(1))).any(dim=1).float().sum().item()
+        total_samples += bsz
+
+        # Balanced Acc 统计
+        with torch.no_grad():
+            for c in test_label.unique():
+                c = int(c.item())
+                sel = (test_label == c)
+                correct_per_c[c] += (pred[sel] == test_label[sel]).sum().cpu()
+                count_per_c[c]   += int(sel.sum().item())
+
+        # ECE
+        all_probs.append(F.softmax(logits, dim=1).detach())
+        all_labels.append(test_label.detach())
+
+        vl.add(loss.item(), bsz)
+        va_overall.add(acc_overall, bsz)
+
+        tqdm_gen.set_description('CD-Test s{} | loss {:.4f} acc {:.4f} | b2i {:.3f} i2b {:.3f}'.format(
+            session, loss.item(), acc_overall, cd_b2i, cd_i2b
+        ))
+
+    # 汇总
+    logs = dict(
+        num_session=session+1,
+        acc=float(va_overall.item()),
+        base_acc=float(va_base_only.item()),
+        new_acc=float(va_new_only.item()),
+        base_acc_given_new=float(va_base_given_new.item()),
+        new_acc_given_base=float(va_new_given_base.item()),
+    )
+
+    # 域级
+    logs.update(dict(
+        acc_base_domain=float(va_dom0.item()),
+        acc_inc_domain=float(va_dom1.item()) if total_samples - part_lengths[0] > 0 else 0.0
+    ))
+
+    # 调和平均
+    def _hmean(a, b):
+        if a <= 0 or b <= 0:
+            return 0.0
+        return 2 * a * b / (a + b)
+    logs['hm_base_new'] = _hmean(logs['base_acc'], logs['new_acc'])
+    logs['hm_domain']   = _hmean(logs['acc_base_domain'], logs['acc_inc_domain'])
+
+    # Top-5
+    logs['top5'] = float(top5_hits / max(1, total_samples))
+
+    # Balanced Accuracy
+    valid = count_per_c > 0
+    bal = (correct_per_c[valid].float() / count_per_c[valid].float()).mean().item() if valid.any() else 0.0
+    logs['balanced_acc'] = float(bal)
+
+    # ECE
+    all_probs = torch.cat(all_probs, dim=0) if len(all_probs) else torch.empty(0)
+    all_labels = torch.cat(all_labels, dim=0) if len(all_labels) else torch.empty(0, dtype=torch.long)
+    logs['ece'] = expected_calibration_error(all_probs, all_labels, n_bins=15) if all_probs.numel() else 0.0
+
+    print('epo {}, CD-test, loss={:.4f} acc={:.4f}'.format(epoch, vl.item(), va_overall.item()))
+    print('base/new only: {:.4f}/{:.4f} | base_given_new {:.4f} | new_given_base {:.4f}'.format(
+        logs['base_acc'], logs['new_acc'], logs['base_acc_given_new'], logs['new_acc_given_base']))
+    print('domain acc (base/inc): {:.4f}/{:.4f} | HM(class/domain): {:.4f}/{:.4f}'.format(
+        logs['acc_base_domain'], logs['acc_inc_domain'], logs['hm_base_new'], logs['hm_domain']))
+    print('Top-5: {:.4f} | BalancedAcc: {:.4f} | ECE: {:.4f}'.format(
+        logs['top5'], logs['balanced_acc'], logs['ece']))
+
+    return vl.item(), va_overall.item(), logs

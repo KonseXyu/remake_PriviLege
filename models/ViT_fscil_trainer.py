@@ -223,7 +223,12 @@ class ViT_FSCILTrainer(Trainer):
         # init train statistics
         result_list = [args]
 
-        columns = ['num_session', 'acc', 'base_acc', 'new_acc', 'base_acc_given_new', 'new_acc_given_base']
+        if getattr(self.args, 'cross_dataset', False):
+            columns = ['num_session','acc','base_acc','new_acc','base_acc_given_new','new_acc_given_base',
+                       'acc_base_domain','acc_inc_domain','hm_base_new','hm_domain',
+                       'top5','balanced_acc','ece','cd_base_to_inc','cd_inc_to_base']
+        else:
+            columns = ['num_session','acc','base_acc','new_acc','base_acc_given_new','new_acc_given_base']
         acc_df = pd.DataFrame(columns=columns)
         print("[Start Session: {}] [Sessions: {}]".format(args.start_session, args.sessions))
 
@@ -339,6 +344,7 @@ class ViT_FSCILTrainer(Trainer):
                     print('The new best test acc of base session={:.3f}'.format(self.trlog['max_acc'][session]))
 
             else:  # incremental learning sessions
+                test_fn = test_cross_domain if getattr(self.args, 'cross_dataset', False) else test
                 print("Incremental session: [%d]" % session)
                 print("#"*50)
                 trainable_params = sum(param.numel() for param in self.model.parameters() if param.requires_grad)
@@ -369,7 +375,7 @@ class ViT_FSCILTrainer(Trainer):
                 self.model.module.train_inc(trainloader, self.args.epochs_new, session, np.unique(train_set.targets), self.word_info, self.query_info)
                 self.model.eval()
                 self.model.module.mode = 'avg_cos'
-                tsl, tsa, logs = test(self.model, testloader, 0, args, session,self.word_info)
+                tsl, tsa, logs = test_fn(self.model, testloader, 0, args, session, self.word_info)
                 acc_df = acc_df._append(logs, ignore_index=True)
 
                 print("Build Vision ProtoType")
@@ -396,6 +402,10 @@ class ViT_FSCILTrainer(Trainer):
         end_params = sum(param.numel() for param in self.model.module.parameters())
         print('[Begin] Total parameters: {}'.format(self.init_params))
         print('[END] Total parameters: {}'.format(end_params))
+
+        # 3) 训练结束后保存 CSV（若没设置 save_log_path 就落在 save_path 下）
+        csv_path = getattr(self.args, 'save_log_path', None) or os.path.join(self.args.save_path, 'acc.csv')
+        acc_df.to_csv(csv_path, index=False)
 
     def set_save_path(self):
         mode = self.args.base_mode + '-' + self.args.new_mode
