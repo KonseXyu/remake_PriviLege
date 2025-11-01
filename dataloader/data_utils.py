@@ -309,16 +309,10 @@ def get_dataloader(args,session):
 def get_base_dataloader(args, clip_trsf=None):
     class_index = np.arange(args.base_class)
     if args.dataset == 'cifar100':
-        if args.clip:
-            trainset = args.Dataset.CIFAR100(root=args.dataroot, train=True, download=True, transform=clip_trsf,
-                                            index=class_index, base_sess=True,is_vit=args.vit, is_clip=args.clip)
-            testset = args.Dataset.CIFAR100(root=args.dataroot, train=False, download=False,
-                                            index=class_index, base_sess=True,is_vit=args.vit, is_clip=args.clip)
-        else:
-            trainset = args.Dataset.CIFAR100(root=args.dataroot, train=True, download=True, transform=clip_trsf,
-                                         index=class_index, base_sess=True,is_vit=args.vit, is_clip=args.clip)
-            testset = args.Dataset.CIFAR100(root=args.dataroot, train=False, download=False,
-                                            index=class_index, base_sess=True,is_vit=args.vit, is_clip=args.clip)
+        trainset = args.Dataset.CIFAR100(root=args.dataroot, train=True, download=True, transform=clip_trsf,
+                                         index=class_index, base_sess=True,is_vit=args.vit)
+        testset = args.Dataset.CIFAR100(root=args.dataroot, train=False, download=False,
+                                            index=class_index, base_sess=True,is_vit=args.vit)
 
     if args.dataset == 'cub200':
         trainset = args.Dataset.CUB200(root=args.dataroot, train=True, index=class_index, base_sess=True)
@@ -346,9 +340,9 @@ def get_base_dataloader_meta(args):
     class_index = np.arange(args.base_class)
     if args.dataset == 'cifar100':
         trainset = args.Dataset.CIFAR100(root=args.dataroot, train=True, download=True,
-                                         index=class_index, base_sess=True,is_vit=args.vit, is_clip=args.clip)
+                                         index=class_index, base_sess=True,is_vit=args.vit)
         testset = args.Dataset.CIFAR100(root=args.dataroot, train=False, download=False,
-                                        index=class_index, base_sess=True,is_vit=args.vit, is_clip=args.clip)
+                                        index=class_index, base_sess=True,is_vit=args.vit)
 
     if args.dataset == 'cub200':
         trainset = args.Dataset.CUB200(root=args.dataroot, train=True, index_path=txt_path)
@@ -373,11 +367,11 @@ def get_new_dataloader(args,session, clip_trsf=None):
         if args.clip:
             class_index = open(txt_path).read().splitlines()
             trainset = args.Dataset.CIFAR100(root=args.dataroot, train=True, download=False, transform=clip_trsf,
-                                            index=class_index, base_sess=False,is_vit=args.vit, is_clip=args.clip)
+                                            index=class_index, base_sess=False,is_vit=args.vit)
         else:
             class_index = open(txt_path).read().splitlines()
             trainset = args.Dataset.CIFAR100(root=args.dataroot, train=True, download=False,
-                                         index=class_index, base_sess=False,is_vit=args.vit, is_clip=args.clip)
+                                         index=class_index, base_sess=False,is_vit=args.vit)
     if args.dataset == 'cub200':
         trainset = args.Dataset.CUB200(root=args.dataroot, train=True, index_path=txt_path)
     if args.dataset == 'mini_imagenet':
@@ -394,12 +388,8 @@ def get_new_dataloader(args,session, clip_trsf=None):
     class_new = get_session_classes(args, session)
 
     if args.dataset == 'cifar100':
-        if args.clip:
-            testset = args.Dataset.CIFAR100(root=args.dataroot, train=False, download=False,
-                                            index=class_new, base_sess=False,is_vit=args.vit, is_clip=args.clip)
-        else:
-            testset = args.Dataset.CIFAR100(root=args.dataroot, train=False, download=False, transform=clip_trsf,
-                                            index=class_new, base_sess=False,is_vit=args.vit, is_clip=args.clip)
+        testset = args.Dataset.CIFAR100(root=args.dataroot, train=False, download=False, transform=clip_trsf,
+                                            index=class_new, base_sess=False,is_vit=args.vit)
     if args.dataset == 'cub200':
         testset = args.Dataset.CUB200(root=args.dataroot, train=False, index=class_new)
     if args.dataset == 'mini_imagenet':
