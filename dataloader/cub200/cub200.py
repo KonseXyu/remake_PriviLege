@@ -47,9 +47,21 @@ class CUB200(Dataset):
     
     def get_label_list(self, file,labels):
         with open(file, 'r') as f:
-            lines = f.readlines()
-            for i, line in enumerate(lines):
-                key,label = line.split(' ')[0], line.split(' ')[1][4:-2]
+            for line in f:
+                # 1) 清理换行/CRLF
+                line = line.strip()
+                if not line:
+                    continue
+                parts = line.split()
+                # CUB classes.txt 常见两种格式：
+                # a) "141.Artic_Tern" （单列）
+                # b) "141 141.Artic_Tern" （两列，左列为序号）
+                raw = parts[1] if len(parts) >= 2 else parts[0]
+                # 2) 去掉数值前缀 "141."
+                if '.' in raw:
+                    _, label = raw.split('.', 1)
+                else:
+                    label = raw
                 labels.append(label)
         return labels
 
