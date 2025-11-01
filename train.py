@@ -81,6 +81,41 @@ def get_command_line_parser():
     parser.add_argument('-proto_temp', type=float, default=10.0,
                         help='Temperature for prototype-cosine classifier (default=10.0)')
 
+    parser.add_argument(
+        '-replace_base_mode',
+        type=str,
+        default='encoder',  # 原来就是按 encoder 特征均值来替换 FC
+        choices=['encoder', 'proto'],
+        help="How to compute prototypes for replace_base_fc: "
+             "'encoder' (orig mean enc), 'proto' (mean of 0.5*(CLS+Vision) with PKT)"
+    )
+
+    parser.add_argument(
+        '-inc_proto_mode',
+        type=str,
+        default='encoder',
+        choices=['encoder', 'proto'],
+        help="How to compute prototypes for new classes in incremental sessions: "
+             "'encoder' (use self.encode), 'proto' (use 0.5*(CLS+Vision) via prompt_encode)."
+    )
+    parser.add_argument(
+        '-append_new_proto',
+        type=int,
+        default=1,
+        choices=[0, 1],
+        help="Whether to append new-class prototypes into query_info['proto'] (1=on, 0=off). Default: 1"
+    )
+
+    parser.add_argument(
+        '-base_proto_mode',
+        type=str,
+        default=None,                       # None 表示自动：如果开了 proto_classifier 就用 privilege；否则 encoder
+        choices=[None, 'encoder', 'proto'],
+        help="How to compute prototypes in BASE build_base_proto: "
+             "'encoder' (original), 'proto' (0.5*(CLS+Vision) via prompt_encode). "
+             "Default: auto (proto if -proto_classifier else encoder)."
+    )
+
     parser.add_argument('-SKD', action='store_true')
     parser.add_argument('-gamma', type=float, default=0.1)
     parser.add_argument('-inc_gamma', type=float, default=0.1)

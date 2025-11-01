@@ -296,24 +296,58 @@ class ViT_MYNET(nn.Module):
         loss = loss_kd + self.args.inc_gamma * loss_seman
         return self.args.inc_skd_weight * loss
 
-    def update_fc_avg(self,dataloader,class_list,query_info):
+    def update_fc_avg(self, dataloader, class_list, query_info):
+        """
+        Compute per-class prototypes for THIS incremental session and:
+          - ALWAYS write them into FC rows of those classes
+          - Optionally append them into query_info['proto'] (controlled by args.append_new_proto)
+        Feature mode:
+          - encoder   : use self.encode(...)
+          - proto : use 0.5*(CLS + Vision) via self.prompt_encode(..., prompt_feat=True, B_tuning=True)
+        """
         self.eval()
-        query_p=[]
-        
+        query_p = []
+
+        mode = getattr(self.args, 'inc_proto_mode', 'encoder')
+
         with torch.no_grad():
+            # 累积本会话所有样本的特征与标签（避免只看最后一个 batch）
+            emb_all, y_all = [], []
             for batch in dataloader:
-                data_imgs, label = [_.cuda() for _ in batch]
-                cls_embed=self.encode(data_imgs).detach()
-            
-            for class_index in class_list:
-                data_index=(label==class_index).nonzero().squeeze(-1)
-                embedding = cls_embed[data_index]
-                proto=embedding.mean(0)
+                data_imgs, label_local = [_.cuda() for _ in batch]
+
+                if mode == 'proto':
+                    cls_embed, prompt_embed = self.prompt_encode(
+                        data_imgs, prompt_feat=True, B_tuning=True
+                    )
+                    feat = 0.5 * (cls_embed + prompt_embed['Vision'])
+                else:  # 'encoder'（与原实现一致）
+                    feat = self.encode(data_imgs)
+
+                emb_all.append(feat.detach().cpu())
+                y_all.append(label_local.detach().cpu())
+
+            emb_all = torch.cat(emb_all, dim=0)
+            y_all = torch.cat(y_all, dim=0)
+
+            # 逐新类求均值原型 → 写回 FC 对应行；并暂存本会话顺序的原型列表
+            for cls in class_list:
+                idx = (y_all == int(cls)).nonzero().squeeze(-1)
+                proto = emb_all.index_select(0, idx).mean(0)
                 query_p.append(proto)
-                self.fc.weight.data[class_index]=proto
-            query_p = torch.stack(query_p)
-        query_info["proto"] = torch.cat([query_info["proto"], query_p.cpu()])
-        
+                # 写 FC：与原逻辑一致
+                self.fc.weight.data[int(cls)] = proto.cuda()
+
+            # [num_new, D]
+            query_p = torch.stack(query_p, dim=0)
+
+        # 可选：把新类原型 append 到原型库（与原实现末尾 cat 类似）
+        if int(getattr(self.args, 'append_new_proto', 1)) == 1:
+            if query_info.get("proto", None) is None:
+                query_info["proto"] = query_p
+            else:
+                query_info["proto"] = torch.cat([query_info["proto"].cpu(), query_p], dim=0)
+
         self.train()
 
     def init_base_fc(self,query,class_list):

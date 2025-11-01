@@ -70,37 +70,60 @@ def build_label_embedding(train_set,session,Bert_model,tokenizer,word_info, args
     word_info["cur_label"] = torch.tensor(classes_int).cpu()
 
 
-def replace_base_fc(trainset, transform, model, args):
-    print("[Replace Base FC - Original]")
+def replace_base_fc(trainset, transform, model, args, query_info=None):
+    """
+    Replace FC with class prototypes computed from base-trainset.
+    - encoder  : mean of encoder features (original behavior)
+    - proto: mean of 0.5*(CLS + Vision) extracted via prompt_encode with PKT (proto style)
+                 and optionally sync query_info['proto'].
+    """
+    mode = getattr(args, 'replace_base_mode', 'encoder')
+    print(f"[Replace Base FC - Mode: {mode}]")
     model = model.eval()
 
     trainloader = torch.utils.data.DataLoader(dataset=trainset, batch_size=128,
                                               num_workers=4, pin_memory=True, shuffle=False)
+    # 使用测试的 transform 来对齐评测分布
     trainloader.dataset.transform = transform
-    embedding_list = []
-    label_list = []
+
+    embedding_list, label_list = [], []
     with torch.no_grad():
-        for i, batch in enumerate(trainloader):
+        for _, batch in enumerate(trainloader):
             data, label = [_.cuda() for _ in batch]
-            model.module.mode = 'encoder'
-            embedding = model(data, query=True)
-            embedding_list.append(embedding.cpu())
+
+            if mode == 'proto':
+                # === proto 风格：与测试/训练同一套特征路径 ===
+                # ViT_Network 中已有 prompt_encode 接口；取 CLS 与 Vision 两路后做 0.5*(CLS+Vision)
+                # （接口参考）:contentReference[oaicite:3]{index=3}
+                cls_embed, prompt_embed = model.module.prompt_encode(
+                    data, prompt_feat=True, B_tuning=True, eval=False
+                )
+                embedding = 0.5 * (cls_embed + prompt_embed['Vision'])
+            else:
+                # === 原实现：encoder 特征均值 ===
+                model.module.mode = 'encoder'
+                embedding = model(data, query=True)
+
+            embedding_list.append(embedding.detach().cpu())
             label_list.append(label.cpu())
-        
+
     embedding_list = torch.cat(embedding_list, dim=0)
     label_list = torch.cat(label_list, dim=0)
 
+    # 按 base_class 逐类取均值作为原型
     proto_list = []
-
     for class_index in range(args.base_class):
-        data_index = (label_list == class_index).nonzero()
-        embedding_this = embedding_list[data_index.squeeze(-1)]
-        embedding_this = embedding_this.mean(0)
-        proto_list.append(embedding_this)
+        idx = (label_list == class_index).nonzero().squeeze(-1)
+        emb_this = embedding_list.index_select(0, idx)
+        proto_list.append(emb_this.mean(0))
+    proto_list = torch.stack(proto_list, dim=0)  # [base_class, D]
 
-    proto_list = torch.stack(proto_list, dim=0)
+    # 1) 写回 FC
+    model.module.fc.weight.data[:args.base_class] = proto_list.cuda()
 
-    model.module.fc.weight.data[:args.base_class] = proto_list
+    # 2) 可选：把这套原型同步给 query_info（与 proto 一致）
+    if (mode == 'proto') and (query_info is not None):
+        query_info["proto"] = proto_list.cpu()
 
     return model
 
@@ -130,7 +153,7 @@ def base_train(model, trainloader, optimizer, scheduler, epoch, word_info, query
         logits, cls_embed, prompt_embed = model(data, base=True)
 
         if args.proto_classifier:
-            # 组合特征：与 PriViLege 一致，用 0.5*(CLS + Vision)
+            # 组合特征：与 proto 一致，用 0.5*(CLS + Vision)
             combined = 0.5 * (cls_embed + prompt_embed['Vision'])
             # 归一化
             combined = F.normalize(combined, dim=1)
@@ -300,32 +323,47 @@ def test(model, testloader, epoch, args, session, word_info, query_info=None):
 
 def build_base_proto(train_loader, model, query_info, args):
     model = model.eval()
-    
+
+    # ==== 选择 base 原型的特征口径 ====
+    mode = getattr(args, 'base_proto_mode', None)
+    if mode is None:
+        # 自动：若启用“原型余弦+温度”分类器，则用 proto；否则 encoder
+        mode = 'proto' if getattr(args, 'proto_classifier', False) else 'encoder'
+    print(f"[Build Base Proto - Mode: {mode}]")
+
     embedding_list = []
     label_list = []
     with torch.no_grad():
         for i, batch in enumerate(train_loader):
             data, label = [_.cuda() for _ in batch]
-            
-            model.module.mode = 'encoder'
-            embedding = model(data, query=True)
-            embedding_list.append(embedding.cpu())
-            label_list.append(label.cpu())
-            
+
+            if mode == 'proto':
+                # proto 同款：0.5*(CLS + Vision)
+                cls_embed, prompt_embed = model.module.prompt_encode(
+                    data, prompt_feat=True, B_tuning=True, eval=False
+                )
+                embedding = 0.5 * (cls_embed + prompt_embed['Vision'])
+            else:
+                # 原始实现：encoder 特征
+                model.module.mode = 'encoder'
+                embedding = model(data, query=True)
+
+            embedding_list.append(embedding.detach().cpu())
+            label_list.append(label.detach().cpu())
+
     embedding_list = torch.cat(embedding_list, dim=0)
     label_list = torch.cat(label_list, dim=0)
 
+    # === 按 base_class 逐类求均值原型 ===
     proto_list = []
-
     for class_index in range(args.base_class):
-        data_index = (label_list == class_index).nonzero()
-        embedding_this = embedding_list[data_index.squeeze(-1)]
-        embedding_this = embedding_this.mean(0)
-        proto_list.append(embedding_this)
+        data_index = (label_list == class_index).nonzero().squeeze(-1)
+        embedding_this = embedding_list.index_select(0, data_index)
+        proto_list.append(embedding_this.mean(0))
 
-    proto_list = torch.stack(proto_list, dim=0) #* num_base, feat_dim
-    query_info["proto"] = proto_list
-    model.module.mode = args.base_mode
+    proto_list = torch.stack(proto_list, dim=0)  # [base_class, D]
+    query_info["proto"] = proto_list             # 与原实现相同
+    model.module.mode = args.base_mode           # 复原运行模式（与原实现一致）
     model = model.train()
 
 """

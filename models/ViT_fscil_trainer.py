@@ -333,7 +333,13 @@ class ViT_FSCILTrainer(Trainer):
                 if not args.not_data_init:
                     self.model.load_state_dict(self.best_model_dict)
                     # testloader.dataset may be a ConcatDataset later; in base it's the base test set
-                    self.model = replace_base_fc(train_set, getattr(testloader.dataset, 'transform', None), self.model, args)
+                    self.model = replace_base_fc(
+                        train_set,
+                        getattr(testloader.dataset, 'transform', None),
+                        self.model,
+                        args,
+                        self.query_info  # 同步 query_info['proto']（在 proto 模式下）
+                    )
                     best_model_dir = os.path.join(args.save_path, 'session' + str(session) + '_max_acc_replace_head.pth')
                     print('Replace the fc with average embedding, and save it to :%s' % best_model_dir)
                     self.best_model_dict = deepcopy(self.model.state_dict())

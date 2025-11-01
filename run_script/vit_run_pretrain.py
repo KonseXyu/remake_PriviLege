@@ -53,13 +53,18 @@ for seed in seeds:
                 '-SKD '
                 '-LT '
                 # '-cross_dataset '
-                '-base_dataset cub200 '
+                '-base_dataset mini_imagenet '
                 '-inc_dataset cifar100 '
                 # '-base_dataroot dataroot '
                 # '-inc_dataroot dataroot '
                   
                 '-proto_classifier '
                 '-proto_temp 10.0 '
+
+                '-base_proto_mode proto '       #encoder proto 两种实现方式
+                '-inc_proto_mode proto '        #encoder proto 两种实现方式
+                '-replace_base_mode proto '     #encoder proto 两种实现方式
+                '-append_new_proto 1 '
                   
                 '-inc_way 5 '
                 '-inc_sessions 2 '
