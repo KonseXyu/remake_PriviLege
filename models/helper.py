@@ -123,7 +123,7 @@ def replace_base_fc(trainset, transform, model, args, query_info=None):
 
     # 2) 可选：把这套原型同步给 query_info（与 proto 一致）
     if (mode == 'proto') and (query_info is not None):
-        query_info["proto"] = proto_list.cpu()
+        query_info["proto"] = _postprocess_protos_for_library(proto_list.cpu(), args)
 
     return model
 
@@ -273,7 +273,9 @@ def test(model, testloader, epoch, args, session, word_info, query_info=None):
                 else:
                     # 兜底：用 FC 权重当原型（如果之前已 replace_fc / update_fc_avg，会等价）
                     P = model.module.fc.weight[:test_class].detach()
-                P = F.normalize(P, dim=1)
+                # 仅当库内未归一，才在这里归一
+                if not getattr(args, 'proto_lib_norm', False):
+                    P = F.normalize(P, dim=1)
 
                 logits = args.proto_temp * F.linear(combined, P)
             else:
@@ -362,6 +364,7 @@ def build_base_proto(train_loader, model, query_info, args):
         proto_list.append(embedding_this.mean(0))
 
     proto_list = torch.stack(proto_list, dim=0)  # [base_class, D]
+    proto_list = _postprocess_protos_for_library(proto_list, args)
     query_info["proto"] = proto_list             # 与原实现相同
     model.module.mode = args.base_mode           # 复原运行模式（与原实现一致）
     model = model.train()
@@ -497,7 +500,10 @@ def test_cross_domain(model, testloader, epoch, args, session, word_info, query_
                 P = query_info['proto'][:test_class].clone().cuda()
             else:
                 P = model.module.fc.weight[:test_class].detach()
-            P = F.normalize(P, dim=1)
+
+            # 仅当库内未归一，才在这里归一
+            if not getattr(args, 'proto_lib_norm', False):
+                P = F.normalize(P, dim=1)
 
             logits = getattr(args, 'proto_temp', 10.0) * F.linear(combined, P)
         else:
@@ -635,3 +641,16 @@ def test_cross_domain(model, testloader, epoch, args, session, word_info, query_
 
     return vl.item(), overall_acc, logs
 
+
+def _postprocess_protos_for_library(P: torch.Tensor, args):
+    """
+    仅在“写入 query_info['proto']”时做的后处理：
+    - 可选 L2 归一化（按行）
+    - 可选温度缩放（整体乘一个系数）
+    """
+    if getattr(args, 'proto_lib_norm', False):
+        P = F.normalize(P, dim=1)
+    t = float(getattr(args, 'proto_lib_temp', 1.0))
+    if t != 1.0:
+        P = P * t
+    return P

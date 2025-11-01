@@ -341,12 +341,19 @@ class ViT_MYNET(nn.Module):
             # [num_new, D]
             query_p = torch.stack(query_p, dim=0)
 
+        # === 仅对“写库”版本做统一后处理 ===
+        if getattr(self.args, 'proto_lib_norm', False):
+            query_p = F.normalize(query_p, dim=1)
+        t = float(getattr(self.args, 'proto_lib_temp', 1.0))
+        if t != 1.0:
+            query_p = query_p * t
+
         # 可选：把新类原型 append 到原型库（与原实现末尾 cat 类似）
         if int(getattr(self.args, 'append_new_proto', 1)) == 1:
             if query_info.get("proto", None) is None:
-                query_info["proto"] = query_p
+                query_info["proto"] = query_p.cpu()
             else:
-                query_info["proto"] = torch.cat([query_info["proto"].cpu(), query_p], dim=0)
+                query_info["proto"] = torch.cat([query_info["proto"], query_p.cpu()], dim=0)
 
         self.train()
 

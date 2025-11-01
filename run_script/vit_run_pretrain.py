@@ -5,8 +5,8 @@ seeds = [1]
 
 project = 'base'
 # dataset = 'mini_imagenet'
-# dataset = 'cifar100'
-dataset = 'cub200'
+dataset = 'cifar100'
+# dataset = 'cub200'
 
 lr_base = 2e-4
 lr_new = 2e-4
@@ -58,8 +58,14 @@ for seed in seeds:
                 # '-base_dataroot dataroot '
                 # '-inc_dataroot dataroot '
                   
+                  #训练/测试 使用proto版本分类器, 温度temp
                 '-proto_classifier '
                 '-proto_temp 10.0 '
+                  
+                  #原型库写入的时候归一化(把“温度”前移到写库阶段, 本来在test)
+                # '-proto_lib_norm '
+                  #温度叠加注意：最终 logits 的总温度 ≈ proto_temp × proto_lib_temp。若写库时已乘 10，而测试又乘 10，等效乘 100；
+                # '-proto_lib_temp 1.0 '
 
                 '-base_proto_mode proto '       #encoder proto 两种实现方式
                 '-inc_proto_mode proto '        #encoder proto 两种实现方式

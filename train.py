@@ -116,6 +116,19 @@ def get_command_line_parser():
              "Default: auto (proto if -proto_classifier else encoder)."
     )
 
+    #归一化 & 温度缩放：在“写入原型库”时生效
+    parser.add_argument(
+        '-proto_lib_norm',
+        action='store_true',
+        help='L2-normalize prototypes when writing to query_info["proto"]'
+    )
+    parser.add_argument(
+        '-proto_lib_temp',
+        type=float,
+        default=1.0,
+        help='Multiply prototypes by this factor when writing to the library'
+    )
+
     parser.add_argument('-SKD', action='store_true')
     parser.add_argument('-gamma', type=float, default=0.1)
     parser.add_argument('-inc_gamma', type=float, default=0.1)
